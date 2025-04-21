@@ -1,0 +1,387 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\PowerBiDashboard;
+use App\Models\PowerBiDashboardAccessLog;
+use App\Models\Tenant;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+
+class PowerBiController extends Controller
+{
+    /**
+     * Muestra la vista previa de un dashboard para los administradores
+     *
+     * @param PowerBiDashboard $dashboard
+     * @return \Illuminate\View\View
+     */
+    public function adminPreview(PowerBiDashboard $dashboard)
+    {
+        // Generamos token para el proxy
+        $token = $this->generateAdminProxyToken($dashboard);
+        
+        // URL del proxy
+        $proxyUrl = route('admin.power-bi.proxy', ['token' => $token]);
+        
+        return view('admin.power-bi.preview', [
+            'dashboard' => $dashboard,
+            'embedUrl' => $proxyUrl,
+            'title' => $dashboard->title,
+            'description' => $dashboard->description,
+        ]);
+    }
+    
+    /**
+     * Genera un token proxy para administradores
+     *
+     * @param PowerBiDashboard $dashboard
+     * @return string
+     */
+    public function generateAdminProxyToken(PowerBiDashboard $dashboard)
+    {
+        // Crear un token que expire en 2 horas con la información necesaria
+        $payload = [
+            'dashboard_id' => $dashboard->id,
+            'embed_url' => $dashboard->embed_url,
+            'expires' => now()->addHours(2)->timestamp,
+            'nonce' => Str::random(16), // Prevenir ataques de repetición
+            'is_admin' => true, // Marcar como token de administrador
+        ];
+        
+        return Crypt::encrypt($payload);
+    }
+    
+    /**
+     * Muestra la lista de dashboards disponibles para un tenant
+     *
+     * @param Tenant $tenant
+     * @return \Illuminate\View\View
+     */
+    public function tenantDashboards(Tenant $tenant)
+    {
+        // Obtener los dashboards activos a los que el tenant tiene acceso
+        $dashboards = $tenant->powerBiDashboards()
+            ->where('is_active', true)
+            ->get();
+        
+        return view('tenant.power-bi.index', [
+            'dashboards' => $dashboards,
+            'tenant' => $tenant,
+        ]);
+    }
+    
+    /**
+     * Muestra directamente el primer dashboard activo del tenant sin UI adicional
+     * Esta función está diseñada para la URL /cliente/{tenant}/power-bi-dashboards
+     *
+     * @param Tenant $tenant
+     * @return \Illuminate\View\View
+     */
+    public function showDirectDashboard(Tenant $tenant)
+    {
+        // Obtener el primer dashboard activo del tenant
+        $dashboard = $tenant->powerBiDashboards()
+            ->where('is_active', true)
+            ->first();
+            
+        if (!$dashboard) {
+            abort(404, 'No hay dashboards activos disponibles para este tenant');
+        }
+        
+        try {
+            // Registrar el acceso
+            try {
+                PowerBiDashboardAccessLog::create([
+                    'dashboard_id' => $dashboard->id,
+                    'tenant_id' => $tenant->id,
+                    'user_id' => request()->user() ? request()->user()->id : null,
+                    'access_ip' => request()->ip(),
+                ]);
+            } catch (\Exception $e) {
+                Log::warning('Error al registrar acceso al dashboard: ' . $e->getMessage());
+            }
+            
+            // Generar URL proxy encriptada para ocultar la URL original
+            $proxyUrl = route('cliente.power-bi.proxy', [
+                'tenant' => $tenant->slug,
+                'token' => $this->generateProxyToken($dashboard)
+            ]);
+            
+            // Renderizar la vista directa sin UI adicional
+            return view('tenant.power-bi.direct', [
+                'dashboard' => $dashboard,
+                'embedUrl' => $proxyUrl,
+                'tenant' => $tenant,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error al mostrar el dashboard directo: ' . $e->getMessage());
+            abort(500, 'Error al cargar el dashboard');
+        }
+    }
+    
+    /**
+     * Muestra un dashboard específico para un tenant
+     *
+     * @param Tenant $tenant
+     * @param PowerBiDashboard $dashboard
+     * @return \Illuminate\View\View
+     */
+    public function showDashboard(Tenant $tenant, PowerBiDashboard $dashboard)
+    {
+        // Verificar que el tenant tenga acceso a este dashboard
+        $hasAccess = $tenant->powerBiDashboards()
+            ->where('power_bi_dashboards.id', $dashboard->id)
+            ->where('is_active', true)
+            ->exists();
+            
+        if (!$hasAccess) {
+            abort(403, 'No tienes acceso a este dashboard');
+        }
+        
+        // Registrar el acceso
+        PowerBiDashboardAccessLog::create([
+            'dashboard_id' => $dashboard->id,
+            'tenant_id' => $tenant->id,
+            'user_id' => request()->user() ? request()->user()->id : null,
+            'access_ip' => request()->ip(),
+        ]);
+        
+        // Generar URL proxy encriptada para ocultar la URL original
+        $proxyUrl = route('tenant.power-bi.proxy', [
+            'tenant' => $tenant,
+            'token' => $this->generateProxyToken($dashboard)
+        ]);
+        
+        return view('tenant.power-bi.show', [
+            'dashboard' => $dashboard,
+            'embedUrl' => $proxyUrl,
+            'tenant' => $tenant,
+        ]);
+    }
+    
+    /**
+     * Genera un token proxy encriptado para un dashboard
+     *
+     * @param PowerBiDashboard $dashboard
+     * @return string
+     */
+    protected function generateProxyToken(PowerBiDashboard $dashboard)
+    {
+        // Crear un token que expire en 1 hora con la información necesaria
+        $payload = [
+            'dashboard_id' => $dashboard->id,
+            'embed_url' => $dashboard->embed_url,
+            'expires' => now()->addHour()->timestamp,
+            'nonce' => Str::random(16), // Prevenir ataques de repetición
+        ];
+        
+        return Crypt::encrypt($payload);
+    }
+    
+    /**
+     * Proxy para enmascarar la URL original del dashboard de Power BI
+     * Versión para administradores
+     * 
+     * @param Request $request
+     * @param string $token
+     * @return \Illuminate\Http\Response
+     */
+    public function adminProxy(Request $request, $token)
+    {
+        try {
+            // Desencriptar el token y validar
+            $payload = Crypt::decrypt($token);
+            
+            if (now()->timestamp > $payload['expires']) {
+                abort(403, 'El token ha expirado');
+            }
+            
+            // Verificar que sea un token de administrador
+            if (!isset($payload['is_admin']) || !$payload['is_admin']) {
+                abort(403, 'Token inválido para administradores');
+            }
+            
+            // Obtener el dashboard
+            $dashboard = PowerBiDashboard::findOrFail($payload['dashboard_id']);
+            
+            // Verificar que el usuario actual sea administrador global o de tenant
+            $user = $request->user();
+            $userHasAccess = false;
+            
+            if ($user) {
+                if ($user->is_admin) {
+                    // Administrador global tiene acceso
+                    $userHasAccess = true;
+                    Log::info('adminProxy - Acceso permitido: usuario es administrador global');
+                } else if ($user->is_tenant_admin) {
+                    // Administrador de tenant también tiene acceso
+                    $userHasAccess = true;
+                    Log::info('adminProxy - Acceso permitido: usuario es administrador de tenant');
+                }
+            }
+            
+            if (!$userHasAccess) {
+                Log::warning('adminProxy - Acceso denegado: usuario no tiene permisos', [
+                    'user_id' => $user ? $user->id : null,
+                    'user_email' => $user ? $user->email : null,
+                    'is_admin' => $user && $user->is_admin ? 'true' : 'false',
+                    'is_tenant_admin' => $user && $user->is_tenant_admin ? 'true' : 'false'
+                ]);
+                abort(403, 'Acceso no autorizado');
+            }
+            
+            // Intentar registrar el acceso pero capturar cualquier error
+            try {
+                if (class_exists('App\\Models\\PowerBiDashboardAccessLog')) {
+                    // Verificamos primero si la tabla existe
+                    if (Schema::hasTable('power_bi_dashboard_access_logs')) {
+                        $logData = [
+                            'dashboard_id' => $dashboard->id,
+                            'user_id' => $request->user() ? $request->user()->id : null,
+                            'access_ip' => $request->ip(),
+                        ];
+                        
+                        // Si la columna existe, agregamos el flag
+                        if (Schema::hasColumn('power_bi_dashboard_access_logs', 'is_admin_access')) {
+                            $logData['is_admin_access'] = true;
+                        }
+                        
+                        // Si la columna existe, agregamos el tenant_id
+                        if (Schema::hasColumn('power_bi_dashboard_access_logs', 'tenant_id')) {
+                            // Si es admin de tenant, registrar su tenant_id
+                            if ($request->user() && $request->user()->is_tenant_admin) {
+                                $logData['tenant_id'] = $request->user()->tenant_id;
+                            } else {
+                                $logData['tenant_id'] = null;
+                            }
+                        }
+                        
+                        PowerBiDashboardAccessLog::create($logData);
+                    }
+                }
+            } catch (\Exception $logError) {
+                // Simplemente registramos el error y continuamos, no interrumpimos la visualización
+                Log::warning('Error al registrar acceso al dashboard: ' . $logError->getMessage());
+            }
+            
+            // Renderizar la vista con el dashboard
+            return response()->view('admin.power-bi.embed', [
+                'dashboard' => $dashboard,
+                'embedUrl' => $dashboard->embed_url,
+            ])->header('Permissions-Policy', 'clipboard-read=*, clipboard-write=*');
+        } catch (\Exception $e) {
+            // Registrar el error para debug
+            Log::error('Error en adminProxy: ' . $e->getMessage());
+            
+            // Mostrar un mensaje más descriptivo al usuario
+            return response()->view('errors.dashboard', [
+                'message' => 'No se pudo cargar el dashboard: ' . $e->getMessage(),
+                'error' => $e,
+            ], 403);
+        }
+    }
+    
+    /**
+     * Proxy para enmascarar la URL original del dashboard de Power BI
+     * Versión para tenants
+     *
+     * @param Request $request
+     * @param Tenant $tenant
+     * @param string $token
+     * @return \Illuminate\Http\Response
+     */
+    public function proxy(Request $request, Tenant $tenant, $token)
+    {
+        try {
+            // Desencriptar el token y validar
+            $payload = Crypt::decrypt($token);
+            
+            if (now()->timestamp > $payload['expires']) {
+                abort(403, 'El token ha expirado');
+            }
+            
+            // Obtener el dashboard
+            $dashboard = PowerBiDashboard::findOrFail($payload['dashboard_id']);
+            
+            // Verificar que el tenant tenga acceso
+            $hasAccess = $tenant->powerBiDashboards()
+                ->where('power_bi_dashboards.id', $dashboard->id)
+                ->where('is_active', true)
+                ->exists();
+                
+            if (!$hasAccess) {
+                abort(403, 'No tienes acceso a este dashboard');
+            }
+            
+            // Verificar que el usuario tenga acceso al tenant
+            $user = $request->user();
+            
+            // Registrar información para debugging
+            Log::debug('PowerBiController::proxy - Verificando acceso de usuario', [
+                'user_id' => $user ? $user->id : null,
+                'user_email' => $user ? $user->email : null,
+                'user_tenant_id' => $user ? $user->tenant_id : null,
+                'tenant_id' => $tenant->id,
+                'is_admin' => $user && $user->is_admin ? 'true' : 'false',
+                'is_tenant_admin' => $user && $user->is_tenant_admin ? 'true' : 'false',
+                'tenant_match' => $user && ((string)$user->tenant_id === (string)$tenant->id) ? 'true' : 'false',
+            ]);
+            
+            // Verificar el acceso según el rol del usuario
+            $userHasAccess = false;
+            
+            if ($user) {
+                if ($user->is_admin) {
+                    // Administrador global tiene acceso a todos los dashboards
+                    $userHasAccess = true;
+                    Log::info('PowerBiController::proxy - Acceso permitido: usuario es administrador global');
+                } 
+                else if ($user->is_tenant_admin && (string)$user->tenant_id === (string)$tenant->id) {
+                    // Tenant admin tiene acceso a dashboards de su tenant
+                    $userHasAccess = true;
+                    Log::info('PowerBiController::proxy - Acceso permitido: usuario es admin del tenant');
+                }
+                else if ((string)$user->tenant_id === (string)$tenant->id) {
+                    // Usuario regular tiene acceso a dashboards de su tenant
+                    $userHasAccess = true;
+                    Log::info('PowerBiController::proxy - Acceso permitido: usuario pertenece al tenant');
+                }
+            }
+                 
+            if (!$userHasAccess) {
+                Log::warning('PowerBiController::proxy - Acceso denegado a dashboard', [
+                    'user_id' => $user ? $user->id : null,
+                    'tenant_id' => $tenant->id,
+                    'dashboard_id' => $dashboard->id,
+                ]);
+                abort(403, 'No tienes permisos para acceder a esta sección');
+            }
+            
+            // Construir encabezados para pasar a Power BI
+            $headers = $request->header();
+            
+            // Eliminar encabezados que no deberían pasarse
+            unset($headers['host']);
+            unset($headers['cookie']);
+            
+            // Realizar la solicitud a Power BI y retornar la respuesta
+            $response = Http::withHeaders($headers)->get($payload['embed_url']);
+            
+            return response($response->body(), $response->status())
+                ->withHeaders($response->headers());
+        } catch (\Exception $e) {
+            Log::error('PowerBiController::proxy - Error en procesamiento de token', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'tenant_id' => $tenant->id,
+                'user_id' => $request->user() ? $request->user()->id : null,
+            ]);
+            abort(403, 'Token inválido: ' . $e->getMessage());
+        }
+    }
+}
