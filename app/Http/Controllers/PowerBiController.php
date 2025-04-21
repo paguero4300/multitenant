@@ -380,6 +380,16 @@ class PowerBiController extends Controller
             unset($headers['host']);
             unset($headers['cookie']);
             
+            // Caso especial para hash-manifest.js que causa recargas infinitas
+            if (str_contains($resourcePath, 'hash-manifest.js')) {
+                Log::info('PowerBiController::proxy - Interceptando solicitud de hash-manifest.js');
+                
+                // Devolvemos un archivo JavaScript vacío para evitar el error y las recargas
+                return response("// Empty hash-manifest.js to prevent reloading\n", 200)
+                    ->header('Content-Type', 'application/javascript')
+                    ->header('Access-Control-Allow-Origin', '*');
+            }
+            
             // Si es una solicitud de recurso, intentar acceder directamente a la URL original
             // sin pasar por la URL de incrustación
             if ($isResourceRequest) {
@@ -396,6 +406,29 @@ class PowerBiController extends Controller
                 
                 // Intentar obtener el recurso directamente
                 $response = Http::withHeaders($headers)->get($resourceUrl);
+                
+                // Si el recurso no se encuentra (404), devolver un contenido vacío del tipo adecuado
+                // para evitar errores en la página principal
+                if ($response->status() == 404) {
+                    $contentType = 'text/plain';
+                    
+                    if (str_contains($resourcePath, '.js')) {
+                        $contentType = 'application/javascript';
+                    } else if (str_contains($resourcePath, '.css')) {
+                        $contentType = 'text/css';
+                    } else if (str_contains($resourcePath, '.png') || str_contains($resourcePath, '.jpg') || str_contains($resourcePath, '.jpeg')) {
+                        $contentType = 'image/png';
+                    }
+                    
+                    Log::info('PowerBiController::proxy - Recurso no encontrado, devolviendo contenido vacío', [
+                        'resource_url' => $resourceUrl,
+                        'content_type' => $contentType
+                    ]);
+                    
+                    return response("", 200)
+                        ->header('Content-Type', $contentType)
+                        ->header('Access-Control-Allow-Origin', '*');
+                }
             } else {
                 // Para la página principal, usar la URL de incrustación normal
                 $response = Http::withHeaders($headers)->get($payload['embed_url']);
