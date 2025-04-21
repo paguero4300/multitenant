@@ -369,11 +369,21 @@ class PowerBiController extends Controller
             unset($headers['host']);
             unset($headers['cookie']);
             
-            // Realizar la solicitud a Power BI y retornar la respuesta
+            // Realizar la solicitud a Power BI
             $response = Http::withHeaders($headers)->get($payload['embed_url']);
             
+            // Filtrar los encabezados problemáticos que causan el error de codificación chunked
+            $safeHeaders = [];
+            foreach ($response->headers() as $key => $values) {
+                // Excluir encabezados relacionados con la codificación de transferencia
+                if (!in_array(strtolower($key), ['transfer-encoding', 'connection', 'keep-alive'])) {
+                    $safeHeaders[$key] = $values;
+                }
+            }
+            
+            // Retornar la respuesta con encabezados seguros
             return response($response->body(), $response->status())
-                ->withHeaders($response->headers());
+                ->withHeaders($safeHeaders);
         } catch (\Exception $e) {
             Log::error('PowerBiController::proxy - Error en procesamiento de token', [
                 'error' => $e->getMessage(),
