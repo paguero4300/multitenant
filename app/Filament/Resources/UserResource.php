@@ -110,9 +110,15 @@ class UserResource extends Resource
                                 $user = Auth::user();
                                 return $user->is_admin || $user->is_tenant_admin;
                             })
-                            // Administradores de tenant no pueden cambiar el tenant
+                            // Administradores de tenant no pueden cambiar el tenant, pero admins generales sí pueden
                             ->disabled(function () {
-                                return Auth::user()->is_tenant_admin;
+                                $user = Auth::user();
+                                // Si es admin general, siempre puede cambiar el tenant
+                                if ($user->is_admin) {
+                                    return false;
+                                }
+                                // Solo deshabilitar si es tenant_admin pero no admin general
+                                return $user->is_tenant_admin;
                             })
                             // Si es admin de tenant, pre-establece su propio tenant_id
                             ->default(function () {

@@ -245,17 +245,6 @@ class PowerBiDashboardResource extends Resource
                                             ->preload()
                                             ->relationship('tenants', 'name')
                                             ->searchable()
-                                            // Si es tenant_admin, limitar las opciones solo a su tenant
-                                            ->options(function () {
-                                                $user = Auth::user();
-                                                if ($user && $user->is_tenant_admin && !$user->is_admin) {
-                                                    // Obtener solo el tenant del usuario actual
-                                                    $tenant = Tenant::find($user->tenant_id);
-                                                    return $tenant ? [$tenant->id => $tenant->name] : [];
-                                                }
-                                                // Si es admin general, mostrar todos los tenants
-                                                return null; // null = usar la relación normal
-                                            })
                                             // Para tenant_admin, deshabilitar el campo y establecer valor por defecto
                                             ->disabled(function () {
                                                 $user = Auth::user();
