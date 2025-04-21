@@ -297,6 +297,18 @@ class PowerBiController extends Controller
      */
     public function proxy(Request $request, Tenant $tenant, $token)
     {
+        // Log completo de la solicitud para diagnóstico
+        Log::info('PowerBiController::proxy - SOLICITUD RECIBIDA', [
+            'request_url' => $request->fullUrl(),
+            'request_path' => $request->path(),
+            'request_method' => $request->method(),
+            'request_ip' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'tenant_id' => $tenant->id,
+            'tenant_name' => $tenant->name,
+            'tenant_slug' => $tenant->slug,
+        ]);
+        
         try {
             // Desencriptar el token y validar
             $payload = Crypt::decrypt($token);
@@ -382,11 +394,20 @@ class PowerBiController extends Controller
             
             // Caso especial para hash-manifest.js que causa recargas infinitas
             if (str_contains($resourcePath, 'hash-manifest.js')) {
-                Log::info('PowerBiController::proxy - Interceptando solicitud de hash-manifest.js');
+                Log::warning('PowerBiController::proxy - INTERCEPTANDO hash-manifest.js', [
+                    'resource_path' => $resourcePath,
+                    'full_url' => $request->fullUrl(),
+                    'embed_url' => $payload['embed_url'],
+                    'token_expires' => date('Y-m-d H:i:s', $payload['expires']),
+                    'dashboard_id' => $payload['dashboard_id'],
+                ]);
                 
                 // Devolvemos un archivo JavaScript vacío para evitar el error y las recargas
-                return response("// Empty hash-manifest.js to prevent reloading\n", 200)
+                $jsContent = "// Empty hash-manifest.js to prevent reloading - " . time() . "\n"; 
+                return response($jsContent, 200)
                     ->header('Content-Type', 'application/javascript')
+                    ->header('Cache-Control', 'no-store, no-cache, must-revalidate')
+                    ->header('Pragma', 'no-cache')
                     ->header('Access-Control-Allow-Origin', '*');
             }
             
@@ -420,13 +441,20 @@ class PowerBiController extends Controller
                         $contentType = 'image/png';
                     }
                     
-                    Log::info('PowerBiController::proxy - Recurso no encontrado, devolviendo contenido vacío', [
+                    Log::warning('PowerBiController::proxy - RECURSO 404 INTERCEPTADO', [
+                        'resource_path' => $resourcePath,
                         'resource_url' => $resourceUrl,
-                        'content_type' => $contentType
+                        'content_type' => $contentType,
+                        'status_code' => $response->status(),
+                        'response_headers' => $response->headers(),
+                        'request_url' => $request->fullUrl(),
+                        'payload_embed_url' => $payload['embed_url']
                     ]);
                     
-                    return response("", 200)
+                    return response("// Empty resource for " . $resourcePath . " - " . time(), 200)
                         ->header('Content-Type', $contentType)
+                        ->header('Cache-Control', 'no-store, no-cache, must-revalidate')
+                        ->header('Pragma', 'no-cache')
                         ->header('Access-Control-Allow-Origin', '*');
                 }
             } else {
@@ -447,18 +475,50 @@ class PowerBiController extends Controller
             $safeHeaders['Access-Control-Allow-Origin'] = ['*'];
             $safeHeaders['Access-Control-Allow-Methods'] = ['GET, POST, OPTIONS'];
             $safeHeaders['Access-Control-Allow-Headers'] = ['Origin, Content-Type, Accept'];
+            $safeHeaders['Cache-Control'] = ['no-store, no-cache, must-revalidate'];
+            $safeHeaders['Pragma'] = ['no-cache'];
+            
+            // Log de la respuesta que estamos por enviar
+            Log::info('PowerBiController::proxy - RESPUESTA CONSTRUIDA', [
+                'resource_path' => $resourcePath,
+                'response_status' => $response->status(),
+                'response_content_length' => strlen($response->body()),
+                'headers_count' => count($safeHeaders),
+                'is_resource' => $isResourceRequest ? 'true' : 'false',
+            ]);
             
             // Retornar la respuesta con encabezados seguros
             return response($response->body(), $response->status())
                 ->withHeaders($safeHeaders);
         } catch (\Exception $e) {
-            Log::error('PowerBiController::proxy - Error en procesamiento de token', [
-                'error' => $e->getMessage(),
+            Log::error('PowerBiController::proxy - ERROR FATAL', [
+                'error_message' => $e->getMessage(),
+                'error_code' => $e->getCode(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
                 'trace' => $e->getTraceAsString(),
                 'tenant_id' => $tenant->id,
+                'tenant_name' => $tenant->name,
+                'tenant_slug' => $tenant->slug,
+                'request_url' => $request->fullUrl(),
+                'request_path' => $request->path(),
+                'request_method' => $request->method(),
                 'user_id' => $request->user() ? $request->user()->id : null,
+                'user_email' => $request->user() ? $request->user()->email : null,
             ]);
-            abort(403, 'Token inválido: ' . $e->getMessage());
+            
+            // En caso de hash-manifest.js, aún intentamos resolver
+            if (str_contains($request->path(), 'hash-manifest.js')) {
+                Log::warning('PowerBiController::proxy - Intentando recuperar de error para hash-manifest.js');
+                return response("// Error recovered hash-manifest.js - " . time() . "\n", 200)
+                    ->header('Content-Type', 'application/javascript')
+                    ->header('Cache-Control', 'no-store, no-cache, must-revalidate')
+                    ->header('Pragma', 'no-cache')
+                    ->header('Access-Control-Allow-Origin', '*');
+            }
+            
+            // Para otros errores, mostramos el mensaje
+            abort(403, 'Error en la carga del dashboard: ' . $e->getMessage());
         }
     }
 }
