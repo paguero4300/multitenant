@@ -362,6 +362,17 @@ class PowerBiController extends Controller
                 abort(403, 'No tienes permisos para acceder a esta sección');
             }
             
+            // Verificar si se está solicitando un recurso secundario (como hash-manifest.js)
+            $originalUrl = $request->url();
+            $resourcePath = $request->path();
+            $isResourceRequest = str_contains($resourcePath, '.js') || str_contains($resourcePath, '.css') || str_contains($resourcePath, '.map') || str_contains($resourcePath, '.png') || str_contains($resourcePath, '.woff');
+            
+            Log::debug('PowerBiController::proxy - Solicitud recibida', [
+                'url' => $originalUrl,
+                'path' => $resourcePath,
+                'is_resource' => $isResourceRequest ? 'true' : 'false'
+            ]);
+            
             // Construir encabezados para pasar a Power BI
             $headers = $request->header();
             
@@ -369,8 +380,26 @@ class PowerBiController extends Controller
             unset($headers['host']);
             unset($headers['cookie']);
             
-            // Realizar la solicitud a Power BI
-            $response = Http::withHeaders($headers)->get($payload['embed_url']);
+            // Si es una solicitud de recurso, intentar acceder directamente a la URL original
+            // sin pasar por la URL de incrustación
+            if ($isResourceRequest) {
+                // Extraer el dominio base de la URL de incrustación
+                $embedUrlParts = parse_url($payload['embed_url']);
+                $baseUrl = $embedUrlParts['scheme'] . '://' . $embedUrlParts['host'];
+                
+                // Construir la URL completa del recurso
+                $resourceUrl = $baseUrl . '/' . $resourcePath;
+                
+                Log::debug('PowerBiController::proxy - Accediendo directamente al recurso', [
+                    'resource_url' => $resourceUrl
+                ]);
+                
+                // Intentar obtener el recurso directamente
+                $response = Http::withHeaders($headers)->get($resourceUrl);
+            } else {
+                // Para la página principal, usar la URL de incrustación normal
+                $response = Http::withHeaders($headers)->get($payload['embed_url']);
+            }
             
             // Filtrar los encabezados problemáticos que causan el error de codificación chunked
             $safeHeaders = [];
@@ -380,6 +409,11 @@ class PowerBiController extends Controller
                     $safeHeaders[$key] = $values;
                 }
             }
+            
+            // Agregar encabezados CORS para evitar restricciones de acceso a recursos
+            $safeHeaders['Access-Control-Allow-Origin'] = ['*'];
+            $safeHeaders['Access-Control-Allow-Methods'] = ['GET, POST, OPTIONS'];
+            $safeHeaders['Access-Control-Allow-Headers'] = ['Origin, Content-Type, Accept'];
             
             // Retornar la respuesta con encabezados seguros
             return response($response->body(), $response->status())
