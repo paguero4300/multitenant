@@ -144,9 +144,9 @@
         </header>
         
         <main class="content">
-            @if(isset($proxyUrl) && $proxyUrl)
+            @if(isset($dashboard->embed_url))
                 <iframe 
-                    src="{{ $proxyUrl }}" 
+                    src="{{ $dashboard->embed_url }}" 
                     frameborder="0" 
                     allowfullscreen 
                     allow="accelerometer; autoplay; clipboard-write; clipboard-read; encrypted-media; gyroscope; picture-in-picture; web-share"

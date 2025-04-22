@@ -5,45 +5,44 @@ namespace App\Http\Controllers;
 use App\Models\PowerBiDashboard;
 use App\Models\Tenant;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 
 class PowerBiDashboardViewController extends Controller
 {
     /**
-     * Muestra un dashboard de Power BI en pantalla completa
+     * Muestra un dashboard en pantalla completa de forma simplificada
+     * Sin proxy, URL directa
      */
     public function show(Request $request, Tenant $tenant, PowerBiDashboard $dashboard)
     {
-        // Verificar que el dashboard pertenezca al tenant
-        $dashboardBelongsToTenant = $dashboard->tenants()->where('tenants.id', $tenant->id)->exists();
-        
-        if (!$dashboardBelongsToTenant) {
-            abort(404, 'Este dashboard no pertenece al tenant seleccionado');
-        }
-        
-        // Verificar que el usuario tenga acceso al tenant
-        $user = Auth::user();
-        $userHasAccess = $user->is_admin || 
-                         $user->is_tenant_admin || 
-                         $user->tenants->contains('id', $tenant->id);
-                         
-        if (!$userHasAccess) {
-            abort(403, 'No tienes acceso a este tenant');
-        }
-        
-        // Generar token para el proxy
         try {
-            $token = app(PowerBiController::class)->generateAdminProxyToken($dashboard);
-            $proxyUrl = route('tenant.power-bi.proxy', ['token' => $token, 'tenant' => $tenant->slug]);
+            // Verificar acceso
+            $hasAccess = $tenant->powerBiDashboards()
+                ->where('power_bi_dashboards.id', $dashboard->id)
+                ->exists();
+                
+            if (!$hasAccess) {
+                abort(403, 'Acceso denegado');
+            }
             
-            return view('power-bi-dashboard.fullscreen', [
+            // Usar directamente la URL del dashboard sin proxy
+            $embedUrl = $dashboard->embed_url;
+            
+            // Registrar acceso para estadísticas
+            Log::info('Full Screen Dashboard View', [
+                'dashboard_id' => $dashboard->id,
+                'tenant_id' => $tenant->id,
+                'user_id' => $request->user() ? $request->user()->id : null,
+                'direct_url' => true
+            ]);
+            
+            return view('tenant.power-bi.direct', [
                 'dashboard' => $dashboard,
+                'embedUrl' => $embedUrl,
                 'tenant' => $tenant,
-                'proxyUrl' => $proxyUrl
             ]);
         } catch (\Exception $e) {
-            Log::error('Error al generar proxy URL en PowerBiDashboardViewController: ' . $e->getMessage());
+            Log::error('Error al mostrar dashboard: ' . $e->getMessage());
             abort(500, 'Error al cargar el dashboard');
         }
     }

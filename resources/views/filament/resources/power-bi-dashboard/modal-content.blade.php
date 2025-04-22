@@ -23,46 +23,30 @@
                 use Filament\Facades\Filament;
                 use Illuminate\Support\Facades\Log;
                 
-                // Generar el token y la URL del proxy aquí mismo
-                $proxyUrl = '';
+                // Usar directamente la URL de embed sin proxy
+                $embedUrl = $record->embed_url;
+                
+                // Registrar el acceso para estadísticas
                 try {
                     // Obtener el tenant actual del contexto de Filament
                     $tenant = Filament::getTenant();
-                    $controller = app(\App\Http\Controllers\PowerBiController::class);
+                    $tenantId = $tenant ? $tenant->id : null;
                     
-                    // Crear el payload del token manualmente (sin acceder a métodos protegidos)
-                    // Los mismos datos que estarían en generateProxyToken o generateAdminProxyToken
-                    $payload = [
+                    // Registrar el acceso en logs
+                    Log::info('Preview Dashboard en Modal', [
                         'dashboard_id' => $record->id,
-                        'embed_url' => $record->embed_url,
-                        'expires' => now()->addHour()->timestamp,
-                        'nonce' => Str::random(16),
-                    ];
-                    
-                    // Si no hay tenant, estamos en el contexto de administrador, agregar is_admin: true
-                    if (!$tenant) {
-                        $payload['is_admin'] = true;
-                    }
-                    
-                    $token = Crypt::encrypt($payload);
-                    
-                    if ($tenant) {
-                        // Usar la ruta de tenant
-                        $proxyUrl = route('tenant.power-bi.proxy', ['tenant' => $tenant, 'token' => $token]);
-                    } else {
-                        // Fallback a ruta de admin
-                        $proxyUrl = route('admin.power-bi.proxy', ['token' => $token]);
-                    }
+                        'tenant_id' => $tenantId,
+                        'user_id' => auth()->check() ? auth()->id() : null,
+                        'direct_url' => true
+                    ]);
                 } catch (\Exception $e) {
-                    // Manejar el error si la generación del token/ruta falla
-                    $proxyUrl = '#error';
-                    Log::error('Error al generar proxy URL en modal-content view: ' . $e->getMessage());
+                    Log::error('Error al registrar acceso a dashboard en modal: ' . $e->getMessage());
                 }
             @endphp
 
-            @if($proxyUrl !== '#error')
+            @if($embedUrl)
                 <iframe 
-                    src="{{ $proxyUrl }}" 
+                    src="{{ $embedUrl }}" 
                     frameborder="0" 
                     allowfullscreen 
                     class="w-full h-full"
@@ -72,7 +56,7 @@
                 ></iframe>
             @else
                 <div class="p-4 text-red-700 bg-red-100 border border-red-300 rounded-md h-full flex items-center justify-center">
-                    <strong>Error:</strong> No se pudo generar la URL segura para la vista previa.
+                    <strong>Error:</strong> No se encontró la URL del dashboard.
                 </div>
             @endif
         </div>

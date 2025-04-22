@@ -277,26 +277,22 @@ class PowerBiDashboardResource extends Resource
                     ->modalAlignment('center')
                     ->extraModalFooterActions([])
                     ->modalContent(function (PowerBiDashboard $record) {
-                        // Generamos la URL del proxy directamente
+                        // Usar directamente la URL de embed sin proxy
+                        $embedUrl = $record->embed_url;
+                        
+                        // Registrar para estadísticas
                         $tenant = Filament::getTenant();
-                        $controller = app(\App\Http\Controllers\PowerBiController::class);
-                        
-                        // Crear datos para el token
-                        $payload = [
+                        \Illuminate\Support\Facades\Log::info('Preview Dashboard en Modal (Tenant)', [
                             'dashboard_id' => $record->id,
-                            'embed_url' => $record->embed_url,
-                            'expires' => now()->addHour()->timestamp,
-                            'nonce' => \Illuminate\Support\Str::random(16),
-                        ];
-                        
-                        $token = \Illuminate\Support\Facades\Crypt::encrypt($payload);
-                        $proxyUrl = route('tenant.power-bi.proxy', ['tenant' => $tenant, 'token' => $token]);
+                            'tenant_id' => $tenant ? $tenant->id : null,
+                            'direct_url' => true
+                        ]);
                         
                         // Devolvemos el iframe con una barra de navegación clara
                         // Usamos HtmlString para que sea compatible con Htmlable
                         return new \Illuminate\Support\HtmlString(<<<HTML
                         <div class="h-[90vh] w-full overflow-hidden">
-                            <iframe src="{$proxyUrl}" frameborder="0" allowfullscreen class="w-full h-full"
+                            <iframe src="{$embedUrl}" frameborder="0" allowfullscreen class="w-full h-full"
                                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                                 style="border: none; width: 100%; height: 100vh; max-height: calc(100vh - 5rem);" scrolling="no"></iframe>
                         </div>

@@ -3,31 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ $dashboard->title }}</title>
     <style>
-        html, body {
+        body, html {
             margin: 0;
             padding: 0;
+            width: 100%;
             height: 100%;
             overflow: hidden;
         }
-        
-        iframe {
-            display: block;
-            width: 100vw;
+        .dashboard-container {
+            width: 100%;
             height: 100vh;
+        }
+        iframe {
+            width: 100%;
+            height: 100%;
             border: none;
-            overflow: hidden;
         }
     </style>
 </head>
 <body>
-    <iframe 
-        src="{{ $embedUrl }}" 
-        frameborder="0" 
-        allowfullscreen="true"
-        allow="accelerometer; autoplay; clipboard-write; clipboard-read; encrypted-media; gyroscope; picture-in-picture; web-share"
-    ></iframe>
+    <div class="dashboard-container">
+        <iframe src="{{ $embedUrl }}" frameborder="0" allowfullscreen="true"></iframe>
+    </div>
 </body>
 </html>
