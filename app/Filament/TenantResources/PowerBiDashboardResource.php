@@ -272,11 +272,10 @@ class PowerBiDashboardResource extends Resource
                     ->label('Vista previa')
                     ->icon('heroicon-o-presentation-chart-bar')
                     ->color('info')
-                    ->modalHeading(fn (PowerBiDashboard $record): string => "Dashboard: {$record->title}")
-                    ->modalIcon('heroicon-o-presentation-chart-bar')
-                    ->modalWidth('screen')
+                    ->modalHeading('')
+                    ->modalIcon('')
+                    ->modalWidth('7xl')
                     ->modalAlignment('center')
-                    ->slideOver(false)
                     ->extraModalFooterActions([])
                     ->modalContent(function (PowerBiDashboard $record) {
                         // Usar directamente la URL de embed sin proxy
@@ -293,14 +292,14 @@ class PowerBiDashboardResource extends Resource
                         // Devolvemos el iframe con una barra de navegación clara
                         // Usamos HtmlString para que sea compatible con Htmlable
                         return new \Illuminate\Support\HtmlString(<<<HTML
-                        <div class="h-[90vh] w-full overflow-hidden bg-white">
+                        <div class="w-full overflow-hidden bg-white rounded-lg shadow-lg">
                             <iframe
                                 src="{$embedUrl}"
                                 frameborder="0"
                                 allowfullscreen="true"
-                                class="w-full h-full"
+                                class="w-full"
                                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-                                style="border: none; width: 100%; height: 100%; min-height: 80vh; background-color: white;"
+                                style="border: none; width: 100%; height: 75vh; background-color: white; border-radius: 0.5rem;"
                                 scrolling="auto">
                             </iframe>
                         </div>

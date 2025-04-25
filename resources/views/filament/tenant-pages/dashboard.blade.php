@@ -28,10 +28,10 @@
         </svg>
     </div>
     
-    <h3 class="text-xl font-medium text-gray-900 dark:text-white mb-4">Inteligencia de Negocio</h3>
+    <h3 class="text-xl font-medium text-gray-900 dark:text-white mb-4">Inteligencia de Negocios</h3>
     
     <p class="text-gray-600 dark:text-gray-300 text-base leading-relaxed mb-8 max-w-2xl mx-auto">
-        Aquí podrás revisar todos los reportes de inteligencia de negocio (BI) de la empresa, 
+        Aquí podrás revisar todos los reportes de inteligencia de negocios (BI) de la empresa, 
         mantenerte informado con datos relevantes y tomar decisiones estratégicas con mayor seguridad. 
         Esperamos que esta herramienta sea de gran utilidad para tu trabajo diario.
     </p>
