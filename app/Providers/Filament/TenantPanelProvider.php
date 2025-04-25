@@ -19,6 +19,7 @@ use Illuminate\Session\Middleware\AuthenticateSession;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Log;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
+use Solutionforest\FilamentLoginScreen\Filament\Pages\Auth\Themes\Theme1\LoginScreenPage as LoginScreenPage;
 
 class TenantPanelProvider extends PanelProvider
 {
@@ -33,9 +34,13 @@ class TenantPanelProvider extends PanelProvider
             ->id('tenant')
             ->domain($domain) // Usa dashboards.test como dominio
             ->path('') // No necesitamos una ruta base adicional
-            ->login()
+            ->login(LoginScreenPage::class)
+            ->brandName('RealPlaza')
+            ->brandLogo(asset('images/logoLight.svg'))
+            ->darkModeBrandLogo(asset('images/logoDark.svg')) // Logo para modo oscuro
+            ->darkMode(false)
             ->colors([
-                'primary' => Color::Blue,
+                  'primary' => '#7400e0',
             ])
             ->tenant(Tenant::class, slugAttribute: 'slug')
             ->tenantRoutePrefix('cliente') // /cliente/{slug}
