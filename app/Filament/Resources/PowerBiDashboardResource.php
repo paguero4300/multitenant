@@ -28,17 +28,17 @@ class PowerBiDashboardResource extends Resource
     protected static ?string $model = PowerBiDashboard::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-chart-bar';
-    
+
     protected static ?string $navigationLabel = 'Dashboards Power BI';
-    
+
     protected static ?string $modelLabel = 'Dashboard de Power BI';
-    
+
     protected static ?string $pluralModelLabel = 'Dashboards de Power BI';
-    
+
     protected static ?string $navigationGroup = 'Gestión BI';
-    
+
     protected static ?int $navigationSort = 1;
-    
+
     // Método para determinar si el recurso debe ser visible en la navegación
     public static function shouldRegisterNavigation(): bool
     {
@@ -46,7 +46,7 @@ class PowerBiDashboardResource extends Resource
         $user = Auth::user();
         return $user && ($user->is_admin || $user->is_tenant_admin);
     }
-    
+
     // Método para determinar si el usuario actual puede acceder al recurso
     public static function canAccess(): bool
     {
@@ -54,12 +54,12 @@ class PowerBiDashboardResource extends Resource
         $user = Auth::user();
         return $user && ($user->is_admin || $user->is_tenant_admin);
     }
-    
+
     // Método para controlar el acceso a la creación de dashboards
-    public static function canCreate(): bool 
+    public static function canCreate(): bool
     {
         $user = Auth::user();
-        
+
         // Si es administrador de tenant pero no administrador global,
         // indicar que debe ser redirigido al panel de tenant
         if ($user && $user->is_tenant_admin && !$user->is_admin) {
@@ -68,7 +68,7 @@ class PowerBiDashboardResource extends Resource
                 'user_id' => $user->id,
                 'tenant_id' => $user->tenant_id,
             ]);
-            
+
             // Mostrar una notificación en la siguiente carga de página
             \Filament\Notifications\Notification::make()
                 ->title('Acceso al panel de tenant')
@@ -76,26 +76,26 @@ class PowerBiDashboardResource extends Resource
                 ->warning()
                 ->persistent()
                 ->send();
-            
+
             // Simplemente devolver false para evitar acceso, sin intentar redireccionar
             // ya que estamos en un contexto donde el redirect no funciona como esperamos
             return false;
         }
-        
+
         // Solo administradores globales pueden crear dashboards desde el panel de administración
         return $user && $user->is_admin;
     }
-    
+
     // Método que modifica la consulta para que los tenant_admin solo vean dashboards de su tenant
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery();
-        
+
         // Registrar información para debug
         $user = Auth::user();
         $currentUrl = request()->url();
         $method = request()->method();
-        
+
         Log::debug('PowerBiDashboardResource::getEloquentQuery - Acceso', [
             'user_id' => $user ? $user->id : null,
             'user_email' => $user ? $user->email : null,
@@ -105,22 +105,22 @@ class PowerBiDashboardResource extends Resource
             'url' => $currentUrl,
             'method' => $method,
         ]);
-        
+
         // Si es un tenant_admin, solo puede ver dashboards de su propio tenant
         if ($user && $user->is_tenant_admin && !$user->is_admin) {
             // Obtenemos el ID del tenant del usuario
             $tenantId = $user->tenant_id;
-            
+
             // Registrar para debugging
             Log::info('PowerBiDashboardResource - Filtrando por tenant_id: ' . $tenantId);
-            
+
             // Filtramos los dashboards que tienen relación con el tenant del usuario
             $query->whereHas('tenants', function ($query) use ($tenantId) {
                 // Especificar claramente la tabla para evitar ambigüedad en la columna 'tenant_id'
                 $query->where('power_bi_dashboard_tenant.tenant_id', $tenantId);
             });
         }
-        
+
         return $query;
     }
 
@@ -147,7 +147,7 @@ class PowerBiDashboardResource extends Resource
                                             ->prefixIcon('heroicon-o-document')
                                             ->placeholder('Nombre del dashboard')
                                             ->columnSpan(7), // Proporción áurea
-                                            
+
                                         Forms\Components\Select::make('category')
                                             ->label('Categoría')
                                             ->prefixIcon('heroicon-o-tag')
@@ -163,14 +163,14 @@ class PowerBiDashboardResource extends Resource
                                                 'otros' => 'Otros'
                                             ])
                                             ->searchable(),
-                                            
+
                                         Forms\Components\Textarea::make('description')
                                             ->label('Descripción')
                                             ->rows(3)
                                             ->placeholder('Describe el propósito y contenido del dashboard')
                                             ->columnSpan('full'),
                                 ]),
-                                
+
                                 Section::make('Estado y Visualización')
                                     ->description('Configuración visual y de disponibilidad')
                                     ->icon('heroicon-o-eye')
@@ -184,7 +184,7 @@ class PowerBiDashboardResource extends Resource
                                             ->offIcon('heroicon-o-x-mark')
                                             ->inline(false)
                                             ->columnSpan(4),
-                                            
+
                                         Forms\Components\FileUpload::make('thumbnail')
                                             ->label('Imagen de Miniatura')
                                             ->helperText('Imagen representativa del dashboard (recomendado: 16:9)')
@@ -194,7 +194,7 @@ class PowerBiDashboardResource extends Resource
                                             ->columnSpan(8), // Proporción áurea
                                     ]),
                             ]),
-                            
+
                         Tab::make('Configuración de Power BI')
                             ->icon('heroicon-o-cog')
                             ->schema([
@@ -209,7 +209,7 @@ class PowerBiDashboardResource extends Resource
                                             ->url()
                                             ->prefixIcon('heroicon-o-link')
                                             ->columnSpan('full'),
-                                            
+
                                         Forms\Components\TextInput::make('report_id')
                                             ->label('ID del Reporte')
                                             ->placeholder('Ej: a1b2c3d4-e5f6-g7h8-i9j0-k1l2m3n4o5p6')
@@ -217,7 +217,7 @@ class PowerBiDashboardResource extends Resource
                                             ->helperText('El ID único del reporte de Power BI')
                                             ->columnSpan(7) // Proporción áurea
                                             ->maxLength(255),
-                                            
+
                                         Forms\Components\TextInput::make('embed_token')
                                             ->label('Token de Incrustación')
                                             ->password()
@@ -230,7 +230,7 @@ class PowerBiDashboardResource extends Resource
                                             ->maxLength(255),
                                     ]),
                             ]),
-                            
+
                         Tab::make('Permisos')
                             ->icon('heroicon-o-lock-closed')
                             ->schema([
@@ -283,24 +283,28 @@ class PowerBiDashboardResource extends Resource
             ->defaultSort('title', 'asc')
             // Proporción áurea para tamaño relativo de columnas
             ->columns([
-                // Si hay imagen, mostrar la imagen; si no, mostrar un icono de acuerdo a la categoría
-                Tables\Columns\IconColumn::make('has_thumbnail')
+                // Mostrar la imagen de miniatura real o un icono por defecto
+                Tables\Columns\ImageColumn::make('thumbnail')
                     ->label('Vista previa')
-                    ->boolean()
-                    ->getStateUsing(function (PowerBiDashboard $record): bool {
-                        // Verificamos si el dashboard tiene una imagen
-                        return !empty($record->thumbnail);
+                    ->defaultImageUrl(function (PowerBiDashboard $record): string {
+                        // Cuando no hay imagen, mostrar un icono basado en la categoría
+                        $categoryIcons = [
+                            'ventas' => 'https://api.iconify.design/heroicons/currency-dollar.svg?color=%2322c55e',
+                            'finanzas' => 'https://api.iconify.design/heroicons/banknotes.svg?color=%23ef4444',
+                            'operaciones' => 'https://api.iconify.design/heroicons/cog-6-tooth.svg?color=%23f59e0b',
+                            'marketing' => 'https://api.iconify.design/heroicons/megaphone.svg?color=%238b5cf6',
+                            'rrhh' => 'https://api.iconify.design/heroicons/user-group.svg?color=%233b82f6',
+                            'clientes' => 'https://api.iconify.design/heroicons/users.svg?color=%230ea5e9',
+                            'general' => 'https://api.iconify.design/heroicons/chart-bar.svg?color=%236366f1',
+                            'otros' => 'https://api.iconify.design/heroicons/document.svg?color=%236b7280'
+                        ];
+
+                        return $categoryIcons[$record->category] ?? $categoryIcons['general'];
                     })
-                    // Cuando no hay imagen, mostrar un icono de chart-bar
-                    ->falseIcon('heroicon-o-presentation-chart-bar')
-                    // Cuando hay imagen, ocultar el icono y mostrar otro icono
-                    ->trueIcon('heroicon-o-photo')
-                    // Colores semánticos
-                    ->falseColor('primary')
-                    ->trueColor('success')
-                    ->size('xl')
+                    ->circular()
+                    ->size(60)
                     ->alignCenter(),
-                
+
                 // Información textual - ocupa espacio proporcional según importancia
                 Tables\Columns\TextColumn::make('title')
                     ->label('Título')
@@ -309,9 +313,9 @@ class PowerBiDashboardResource extends Resource
                     ->weight('bold')
                     ->size('lg')
                     // Principio de proximidad - agrupar la descripción con el título
-                    ->description(fn (PowerBiDashboard $record): ?string => 
+                    ->description(fn (PowerBiDashboard $record): ?string =>
                         $record->description ? \Illuminate\Support\Str::limit($record->description, 80) : null),
-                
+
                 // Badge con diseño mejorado - proporciones áureas en tamaño y espaciado
                 Tables\Columns\BadgeColumn::make('category')
                     ->label('Categoría')
@@ -340,7 +344,7 @@ class PowerBiDashboardResource extends Resource
                     ])
                     ->iconPosition('before')
                     ->size('md'),
-                
+
                 // Estado con mejor diseño visual - ícono más descriptivo
                 Tables\Columns\IconColumn::make('is_active')
                     ->label('Activo')
@@ -352,7 +356,7 @@ class PowerBiDashboardResource extends Resource
                     ->size('lg')
                     ->alignCenter()
                     ->sortable(),
-                
+
                 // Contador de organizaciones con mejor formato visual
                 Tables\Columns\TextColumn::make('tenants_count')
                     ->label('Organizaciones')
@@ -362,7 +366,7 @@ class PowerBiDashboardResource extends Resource
                     ->icon('heroicon-o-building-office')
                     ->alignCenter()
                     ->badge(),
-                
+
                 // Fechas menos prominentes (principio de jerarquía visual)
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Creado')
@@ -371,7 +375,7 @@ class PowerBiDashboardResource extends Resource
                     ->color('gray')
                     ->size('sm')
                     ->toggleable(isToggledHiddenByDefault: true),
-                
+
                 Tables\Columns\TextColumn::make('updated_at')
                     ->label('Actualizado')
                     ->dateTime('d/m/Y')
@@ -397,13 +401,13 @@ class PowerBiDashboardResource extends Resource
                         'general' => 'General',
                         'otros' => 'Otros'
                     ]),
-                    
+
                 Tables\Filters\TernaryFilter::make('is_active')
                     ->label('Estado')
                     ->placeholder('Todos los dashboards')
                     ->trueLabel('Dashboards activos')
                     ->falseLabel('Dashboards inactivos'),
-                    
+
                 // Nuevo filtro por organizaciones para un acceso más rápido
                 Tables\Filters\SelectFilter::make('tenant')
                     ->label('Organización')
@@ -428,11 +432,12 @@ class PowerBiDashboardResource extends Resource
                         ->modalIcon('heroicon-o-presentation-chart-bar')
                         ->modalWidth('screen')
                         ->modalAlignment('center')
+                        ->slideOver(false)
                         ->extraModalFooterActions([])
                         ->modalContent(function (PowerBiDashboard $record) {
                             // Usar directamente la URL de embed sin proxy
                             $embedUrl = $record->embed_url;
-                            
+
                             // Registrar para estadísticas
                             $tenant = Filament::getTenant();
                             \Illuminate\Support\Facades\Log::info('Preview Dashboard en Modal (Admin)', [
@@ -440,20 +445,25 @@ class PowerBiDashboardResource extends Resource
                                 'tenant_id' => $tenant ? $tenant->id : null,
                                 'direct_url' => true
                             ]);
-                            
-                            // Devolvemos el iframe con una barra de navegación clara
-                            // Usamos HtmlString para que sea compatible con Htmlable
+
+
                             return new \Illuminate\Support\HtmlString(<<<HTML
-                            <div class="h-[90vh] w-full overflow-hidden">
-                                <iframe src="{$embedUrl}" frameborder="0" allowfullscreen class="w-full h-full"
-                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                                    style="border: none; width: 100%; height: 100vh; max-height: calc(100vh - 5rem);" scrolling="no"></iframe>
+                            <div class="h-[90vh] w-full overflow-hidden bg-white">
+                                <iframe
+                                    src="{$embedUrl}"
+                                    frameborder="0"
+                                    allowfullscreen="true"
+                                    class="w-full h-full"
+                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                                    style="border: none; width: 100%; height: 100%; min-height: 80vh; background-color: white;"
+                                    scrolling="auto">
+                                </iframe>
                             </div>
                             HTML);
                         })
                         ->modalSubmitAction(false)
                         ->modalCancelActionLabel('Cerrar')
-                        ->extraModalFooterActions([]), 
+                        ->extraModalFooterActions([]),
                     Tables\Actions\DeleteAction::make()
                         ->label('Eliminar')
                         ->icon('heroicon-o-trash')
@@ -465,7 +475,7 @@ class PowerBiDashboardResource extends Resource
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
-                        // Solo permitimos que el admin general elimine dashboards en masa
+
                         ->visible(fn () => Auth::user() && Auth::user()->is_admin),
                     Tables\Actions\BulkAction::make('activar')
                         ->label('Activar Seleccionados')
@@ -473,22 +483,22 @@ class PowerBiDashboardResource extends Resource
                         ->action(function (\Illuminate\Database\Eloquent\Collection $records) {
                             // Verificar permisos: un tenant_admin solo puede modificar dashboards de su tenant
                             $user = Auth::user();
-                            
+
                             // Para cada dashboard, verificar si el usuario tiene permisos para modificarlo
                             $records->each(function (PowerBiDashboard $record) use ($user) {
                                 $canModify = true;
-                                
+
                                 // Si es tenant_admin, verificar que el dashboard pertenece a su tenant
                                 if ($user && $user->is_tenant_admin && !$user->is_admin) {
                                     $canModify = $record->tenants()->where('tenant_id', $user->tenant_id)->exists();
                                 }
-                                
+
                                 // Solo actualizar si tiene permisos
                                 if ($canModify) {
                                     $record->update(['is_active' => true]);
                                 }
                             });
-                            
+
                             Notification::make()
                                 ->title('Dashboards Activados')
                                 ->success()
@@ -501,22 +511,22 @@ class PowerBiDashboardResource extends Resource
                         ->action(function (\Illuminate\Database\Eloquent\Collection $records) {
                             // Verificar permisos: un tenant_admin solo puede modificar dashboards de su tenant
                             $user = Auth::user();
-                            
+
                             // Para cada dashboard, verificar si el usuario tiene permisos para modificarlo
                             $records->each(function (PowerBiDashboard $record) use ($user) {
                                 $canModify = true;
-                                
+
                                 // Si es tenant_admin, verificar que el dashboard pertenece a su tenant
                                 if ($user && $user->is_tenant_admin && !$user->is_admin) {
                                     $canModify = $record->tenants()->where('tenant_id', $user->tenant_id)->exists();
                                 }
-                                
+
                                 // Solo actualizar si tiene permisos
                                 if ($canModify) {
                                     $record->update(['is_active' => false]);
                                 }
                             });
-                            
+
                             Notification::make()
                                 ->title('Dashboards Desactivados')
                                 ->success()
@@ -531,14 +541,14 @@ class PowerBiDashboardResource extends Resource
             ->emptyStateHeading('No hay dashboards')
             ->emptyStateDescription('Crea tu primer dashboard de Power BI haciendo clic en el botón "Crear dashboard".');
     }
-    
+
     public static function getRelations(): array
     {
         return [
             RelationManagers\TenantsRelationManager::class,
         ];
     }
-    
+
     public static function getPages(): array
     {
         return [
