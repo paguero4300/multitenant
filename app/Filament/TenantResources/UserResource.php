@@ -18,23 +18,23 @@ use Filament\Facades\Filament;
 class UserResource extends Resource
 {
     protected static ?string $model = User::class;
-    
+
     // Define la relación con el tenant (esto es clave para la multi-tenancy)
     protected static ?string $tenantOwnershipRelationshipName = 'tenant';
 
     protected static ?string $navigationIcon = 'heroicon-o-users';
-    
+
     protected static ?string $navigationGroup = 'Administración';
-    
+
     protected static ?int $navigationSort = 1;
-    
+
     // Aseguramos que el recurso sea visible solo para administradores de tenant en el panel de tenant
     public static function shouldRegisterNavigation(): bool
     {
         // Registramos para debugging
         $user = Auth::user();
         $tenant = Filament::getTenant();
-        
+
         Log::debug('TenantUserResource::shouldRegisterNavigation', [
             'user_id' => $user ? $user->id : null,
             'user_email' => $user ? $user->email : null,
@@ -43,9 +43,19 @@ class UserResource extends Resource
             'tenant_id' => $tenant ? $tenant->id : null,
             'user_tenant_id' => $user ? $user->tenant_id : null,
         ]);
-        
+
         // Solo debe ser visible para administradores de tenant
-        return $user && $user->is_tenant_admin && $tenant && (string)$user->tenant_id === (string)$tenant->id;
+        if (!$user || !$tenant) {
+            return false;
+        }
+
+        // Verificar si el usuario es admin de tenant
+        if (!$user->is_tenant_admin) {
+            return false;
+        }
+
+        // Verificar si el usuario puede acceder a este tenant
+        return $user->canAccessTenant($tenant);
     }
 
     public static function form(Form $form): Form
@@ -53,7 +63,7 @@ class UserResource extends Resource
         // Obtenemos el usuario autenticado y el tenant actual
         $user = Auth::user();
         $tenant = Filament::getTenant();
-        
+
         return $form
             ->columns(12) // Usamos 12 columnas para aplicar mejor la proporción áurea (aproximadamente 7:5:3)
             ->schema([
@@ -70,7 +80,7 @@ class UserResource extends Resource
                             ->columnSpan(7) // Proporción áurea aproximada
                             ->maxLength(255)
                             ->prefixIcon('heroicon-o-user'),
-                            
+
                         Forms\Components\TextInput::make('email')
                             ->label('Correo electrónico')
                             ->email()
@@ -80,15 +90,29 @@ class UserResource extends Resource
                             ->columnSpan(12)
                             ->maxLength(255)
                             ->unique(ignoreRecord: true),
-                            
-                        // Campo oculto para asignar el tenant automáticamente
-                        Forms\Components\Hidden::make('tenant_id')
+
+                        // Selector de tenant - permite seleccionar entre los tenants accesibles
+                        Forms\Components\Select::make('tenant_id')
+                            ->label('Tenant')
+                            ->relationship('tenant', 'name')
+                            ->searchable()
+                            ->preload()
+                            ->required()
+                            ->helperText('Tenant al que pertenecerá el usuario')
                             ->default(fn() => $tenant ? $tenant->id : null)
-                            ->dehydrated(true) // Aseguramos que se guarde en la base de datos
-                            ->required(),
+                            ->options(function () {
+                                $user = Auth::user();
+                                if (!$user) return [];
+
+                                // Obtener todos los tenants a los que el usuario tiene acceso
+                                return $user->additionalTenants()
+                                    ->pluck('name', 'id')
+                                    ->union([$user->tenant_id => $user->tenant->name])
+                                    ->toArray();
+                            }),
                     ])
                     ->columnSpan(7), // Espacio principal (Proporción áurea)
-                
+
                 // Sección de seguridad (Principio de similitud - elementos que comparten un propósito)
                 Forms\Components\Section::make('Seguridad')
                     ->description('Credenciales de acceso')
@@ -101,14 +125,14 @@ class UserResource extends Resource
                             ->required(fn (string $operation): bool => $operation === 'create')
                             ->dehydrated(fn ($state) => filled($state))
                             ->maxLength(255)
-                            ->label(fn (string $operation): string => 
+                            ->label(fn (string $operation): string =>
                                 $operation === 'create' ? 'Contraseña' : 'Contraseña (dejar en blanco para mantener la actual)')
                             ->autocomplete(false)
                             ->revealable()
                             ->helperText('Mínimo 8 caracteres recomendados'),
                     ])
                     ->columnSpan(5), // Espacio complementario (Proporción áurea)
-                
+
                 // Sección de permisos (solo para edición)
                 Forms\Components\Section::make('Permisos de usuario')
                     ->description('Nivel de acceso dentro de la organización')
@@ -134,7 +158,7 @@ class UserResource extends Resource
                     ->sortable()
                     ->searchable()
                     ->toggleable(isToggledHiddenByDefault: true),
-                    
+
                 Tables\Columns\TextColumn::make('name')
                     ->label('Nombre')
                     ->searchable()
@@ -142,7 +166,7 @@ class UserResource extends Resource
                     ->description(fn (User $record): string => $record->email)
                     ->icon('heroicon-o-user')
                     ->weight('bold'),
-                    
+
                 Tables\Columns\TextColumn::make('email')
                     ->label('Correo')
                     ->searchable()
@@ -151,7 +175,7 @@ class UserResource extends Resource
                     ->copyable() // Permite copiar el correo con un clic
                     ->copyMessage('Correo copiado')
                     ->copyMessageDuration(1500),
-                
+
                 Tables\Columns\IconColumn::make('is_tenant_admin')
                     ->label('Admin. Organización')
                     ->alignCenter()
@@ -159,17 +183,17 @@ class UserResource extends Resource
                     ->trueIcon('heroicon-o-check-badge')
                     ->falseIcon('heroicon-o-x-mark')
                     ->trueColor('warning')
-                    ->tooltip(fn (User $record): string => 
-                        $record->is_tenant_admin 
-                            ? 'Administrador de Organización' 
+                    ->tooltip(fn (User $record): string =>
+                        $record->is_tenant_admin
+                            ? 'Administrador de Organización'
                             : 'Usuario Regular'),
-                
+
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Creado')
                     ->date('d/m/Y')
                     ->sortable()
                     ->toggleable(),
-                    
+
                 Tables\Columns\TextColumn::make('updated_at')
                     ->label('Actualizado')
                     ->date('d/m/Y')
@@ -178,6 +202,19 @@ class UserResource extends Resource
             ])
             ->defaultSort('name', 'asc')
             ->filters([
+                // Filtro de tenant para mostrar usuarios de un tenant específico
+                Tables\Filters\SelectFilter::make('tenant_id')
+                    ->label('Tenant')
+                    ->relationship('tenant', 'name')
+                    ->preload()
+                    ->searchable()
+                    ->query(function (Builder $query, array $data) {
+                        if (isset($data['value']) && $data['value']) {
+                            return $query->where('tenant_id', $data['value']);
+                        }
+                        return $query;
+                    }),
+
                 Tables\Filters\SelectFilter::make('role')
                     ->label('Rol')
                     ->options([
@@ -190,6 +227,18 @@ class UserResource extends Resource
                             'user' => $query->where('is_tenant_admin', false),
                             default => $query,
                         };
+                    }),
+
+                // Filtro para mostrar solo usuarios del tenant actual
+                Tables\Filters\Filter::make('current_tenant_only')
+                    ->label('Solo tenant actual')
+                    ->toggle()
+                    ->query(function (Builder $query) {
+                        $tenant = Filament::getTenant();
+                        if ($tenant) {
+                            return $query->where('tenant_id', $tenant->id);
+                        }
+                        return $query;
                     }),
             ])
             ->actions([
@@ -233,7 +282,7 @@ class UserResource extends Resource
     {
         return 'Usuario';
     }
-    
+
     public static function getPluralModelLabel(): string
     {
         return 'Usuarios';
@@ -247,36 +296,69 @@ class UserResource extends Resource
             'edit' => Pages\EditUser::route('/{record}/edit'),
         ];
     }
-    
+
     // Método para determinar si el usuario actual puede acceder al recurso
     public static function canAccess(): bool
     {
         $user = Auth::user();
         $tenant = Filament::getTenant();
-        
-        // Solo administradores de tenant pueden acceder, y solo a su propio tenant
-        return $user && $user->is_tenant_admin && $tenant && (string)$user->tenant_id === (string)$tenant->id;
+
+        if (!$user || !$tenant) {
+            return false;
+        }
+
+        // Verificar si el usuario es admin de tenant
+        if (!$user->is_tenant_admin) {
+            return false;
+        }
+
+        // Verificar si el usuario puede acceder a este tenant
+        return $user->canAccessTenant($tenant);
     }
-    
-    // Método que modifica la consulta para que solo se vean usuarios del tenant actual
+
+    // Método que modifica la consulta para mostrar usuarios de todos los tenants accesibles
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery();
         $tenant = Filament::getTenant();
-        
-        // Logging para debug
         $user = Auth::user();
+
+        // Logging para debug
         Log::debug('TenantUserResource::getEloquentQuery', [
             'user_id' => $user ? $user->id : null,
             'tenant_id' => $tenant ? $tenant->id : null,
         ]);
-        
-        // Solo mostrar usuarios del tenant actual y nunca administradores globales
-        if ($tenant) {
-            $query->where('tenant_id', $tenant->id)
-                  ->where('is_admin', false);
+
+        if (!$user || !$tenant) {
+            return $query->whereRaw('1 = 0'); // No mostrar nada si no hay usuario o tenant
         }
-        
+
+        // Nunca mostrar administradores globales
+        $query->where('is_admin', false);
+
+        // Si es admin de tenant, mostrar usuarios de todos los tenants a los que tiene acceso
+        if ($user->is_tenant_admin) {
+            // Obtener los IDs de todos los tenants a los que tiene acceso
+            $accessibleTenants = $user->getTenants(Filament::getPanel('tenant'))->pluck('id')->toArray();
+
+            Log::debug('TenantUserResource::getEloquentQuery - Tenants accesibles', [
+                'user_id' => $user->id,
+                'accessible_tenants' => $accessibleTenants,
+                'current_tenant' => $tenant->id,
+            ]);
+
+            // Mostrar usuarios de todos los tenants accesibles
+            $query->whereIn('tenant_id', $accessibleTenants);
+
+            // Añadir un filtro para mostrar solo usuarios del tenant actual si se desea
+            if (request()->has('current_tenant_only') && request()->input('current_tenant_only')) {
+                $query->where('tenant_id', $tenant->id);
+            }
+        } else {
+            // Para cualquier otro caso, solo mostrar usuarios del tenant actual
+            $query->where('tenant_id', $tenant->id);
+        }
+
         return $query;
     }
 }

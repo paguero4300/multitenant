@@ -20,13 +20,13 @@ class TenantMiddleware
     {
         $tenant = $request->route('tenant');
         $user = $request->user();
-        
+
         // Log inicial básico
         Log::debug('TenantMiddleware - Inicio de verificación', [
             'ruta' => $request->path(),
             'user_id' => $user ? $user->id : 'no autenticado',
         ]);
-        
+
         // Verificar si el tenant existe y convertirlo a objeto si es un slug
         if (! $tenant instanceof Tenant) {
             try {
@@ -37,12 +37,12 @@ class TenantMiddleware
                 abort(404, 'Organización no encontrada.');
             }
         }
-        
+
         // Verificar si hay un usuario autenticado
         if (! $user) {
             abort(403, 'Debes iniciar sesión para acceder a este recurso.');
         }
-        
+
         // 1. PRIMERO: Administradores globales pueden acceder a cualquier tenant
         if ($user->is_admin == 1) {
             Log::info('TenantMiddleware - Administrador global accediendo a tenant', [
@@ -51,44 +51,63 @@ class TenantMiddleware
             ]);
             return $next($request);
         }
-        
-        // 2. SEGUNDO: Administradores de tenant solo pueden acceder a su propio tenant
+
+        // 2. SEGUNDO: Administradores de tenant pueden acceder a su propio tenant y a tenants adicionales
         if ($user->is_tenant_admin == 1) {
             // Comparar IDs como strings para evitar problemas de tipo
             if ((string)$user->tenant_id === (string)$tenant->id) {
-                Log::info('TenantMiddleware - Admin de tenant accediendo a su tenant', [
+                Log::info('TenantMiddleware - Admin de tenant accediendo a su tenant principal', [
                     'user_id' => $user->id,
                     'tenant_id' => $tenant->id,
                 ]);
                 return $next($request);
             }
-            
+
+            // Verificar si tiene acceso a este tenant como tenant adicional
+            if ($user->additionalTenants()->where('tenants.id', $tenant->id)->exists()) {
+                Log::info('TenantMiddleware - Admin de tenant accediendo a tenant adicional', [
+                    'user_id' => $user->id,
+                    'tenant_id' => $tenant->id,
+                    'tenant_principal' => $user->tenant_id,
+                ]);
+                return $next($request);
+            }
+
             Log::warning('TenantMiddleware - Admin de tenant intentando acceder a otro tenant', [
                 'user_id' => $user->id,
                 'user_tenant_id' => $user->tenant_id,
                 'tenant_solicitado' => $tenant->id,
             ]);
-            
+
             abort(403, 'No tienes permisos para acceder a esta organización como administrador.');
         }
-        
-        // 3. TERCERO: Usuarios normales solo pueden acceder a su propio tenant
+
+        // 3. TERCERO: Usuarios normales pueden acceder a su propio tenant
         // Comparar IDs como strings para evitar problemas de tipo
         if ((string)$user->tenant_id === (string)$tenant->id) {
-            Log::info('TenantMiddleware - Usuario regular accediendo a su tenant', [
+            Log::info('TenantMiddleware - Usuario regular accediendo a su tenant principal', [
                 'user_id' => $user->id,
                 'tenant_id' => $tenant->id,
             ]);
             return $next($request);
         }
-        
+
+        // 3.1 NUEVO: Verificar si el usuario tiene acceso a este tenant como tenant adicional
+        if ($user->additionalTenants()->where('tenants.id', $tenant->id)->exists()) {
+            Log::info('TenantMiddleware - Usuario regular accediendo a tenant adicional', [
+                'user_id' => $user->id,
+                'tenant_id' => $tenant->id,
+            ]);
+            return $next($request);
+        }
+
         // 4. Cualquier otro caso: denegar acceso
         Log::warning('TenantMiddleware - Acceso denegado a tenant no autorizado', [
             'user_id' => $user->id,
             'user_tenant_id' => $user->tenant_id,
             'tenant_solicitado' => $tenant->id,
         ]);
-        
+
         abort(403, 'No tienes permisos para acceder a esta organización.');
     }
 }

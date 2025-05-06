@@ -17,18 +17,18 @@ class TenantResource extends Resource
 {
     protected static ?string $model = Tenant::class;
     protected static ?string $navigationIcon = 'heroicon-o-building-office';
-    protected static ?string $navigationLabel = 'Clientes';
-    protected static ?string $modelLabel = 'Cliente';
-    protected static ?string $pluralModelLabel = 'Clientes';
+    protected static ?string $navigationLabel = 'Tenants';
+    protected static ?string $modelLabel = 'Tenant';
+    protected static ?string $pluralModelLabel = 'Tenants';
     protected static bool $isScopedToTenant = false; // No aplicar tenant a este recurso
-    
+
     // Método para determinar si el recurso debe ser visible en la navegación
     public static function shouldRegisterNavigation(): bool
     {
         // Solo administradores generales pueden ver este recurso
         return Auth::user() && Auth::user()->is_admin;
     }
-    
+
     // Método para determinar si el usuario actual puede acceder al recurso
     public static function canAccess(): bool
     {
@@ -42,23 +42,23 @@ class TenantResource extends Resource
             ->columns(12) // Usamos 12 columnas para la proporción áurea
             ->schema([
                 // Sección de información principal (Principio de proximidad)
-                Forms\Components\Section::make('Información del cliente')
-                    ->description('Datos principales del cliente o empresa')
+                Forms\Components\Section::make('Información del tenant')
+                    ->description('Datos principales del tenant')
                     ->icon('heroicon-o-building-office')
                     ->columns(12)
                     ->schema([
                         Forms\Components\TextInput::make('name')
                             ->label('Nombre')
-                            ->placeholder('Nombre del cliente')
-                            ->helperText('Nombre completo del cliente o empresa')
+                            ->placeholder('Nombre del tenant')
+                            ->helperText('Nombre completo del tenant')
                             ->required()
                             ->maxLength(255)
                             ->prefixIcon('heroicon-o-building-office')
                             ->live(onBlur: true)
                             ->columnSpan(7) // Proporción áurea
-                            ->afterStateUpdated(fn (string $state, callable $set) => 
+                            ->afterStateUpdated(fn (string $state, callable $set) =>
                                 $set('slug', Str::slug($state))),
-                                
+
                         Forms\Components\TextInput::make('slug')
                             ->label('Identificador URL')
                             ->placeholder('identificador-url')
@@ -70,15 +70,15 @@ class TenantResource extends Resource
                             ->maxLength(255),
                     ])
                     ->columnSpan(8), // Proporción áurea para secciones
-                    
+
                 // Sección de configuración (Principio de similitud)
                 Forms\Components\Section::make('Configuración')
-                    ->description('Ajustes del cliente en la plataforma')
+                    ->description('Ajustes del tenant en la plataforma')
                     ->icon('heroicon-o-cog')
                     ->schema([
                         Forms\Components\Toggle::make('is_active')
                             ->label('Activo')
-                            ->helperText('Determina si este cliente está activo en el sistema')
+                            ->helperText('Determina si este tenant está activo en el sistema')
                             ->default(true),
                     ])
                     ->columnSpan(4), // Proporción áurea para secciones
@@ -89,7 +89,7 @@ class TenantResource extends Resource
     public static function table(Table $table): Table
     {
         $domain = parse_url(config('app.url'), PHP_URL_HOST);
-        
+
         return $table
             ->striped() // Mejora la legibilidad (Principio de figura-fondo)
             ->columns([
@@ -109,14 +109,14 @@ class TenantResource extends Resource
                     ->falseIcon('heroicon-o-x-circle')
                     ->trueColor('success')
                     ->falseColor('danger'),
-                // Columna mejorada para acceder directamente al panel del cliente
+                // Columna mejorada para acceder directamente al panel del tenant
                 Tables\Columns\TextColumn::make('tenant_url')
-                    ->label('Panel del cliente')
+                    ->label('Panel del tenant')
                     ->getStateUsing(function ($record) use ($domain) {
                         return "Acceder al panel"; // Texto del enlace
                     })
                     ->description(function ($record) use ($domain) {
-                        return "cliente/{$record->slug}";
+                        return "cliente/{$record->slug}"; // Mantenemos la URL original
                     })
                     ->copyable() // Permite copiar la URL al portapapeles
                     ->copyMessage('URL copiada al portapapeles')
@@ -169,8 +169,8 @@ class TenantResource extends Resource
                 ->label('Acciones en grupo'),
             ])
             ->emptyStateIcon('heroicon-o-building-office')
-            ->emptyStateHeading('No hay clientes')
-            ->emptyStateDescription('Crea tu primer cliente haciendo clic en el botón "Crear cliente".');
+            ->emptyStateHeading('No hay tenants')
+            ->emptyStateDescription('Crea tu primer tenant haciendo clic en el botón "Crear tenant".');
     }
 
 
@@ -191,13 +191,13 @@ class TenantResource extends Resource
             'edit' => Pages\EditTenant::route('/{record}/edit'),
         ];
     }
-    
+
     // Textos personalizados para el recurso
     public static function getNavigationGroup(): ?string
     {
         return 'Administración';
     }
-    
+
     public static function getNavigationBadge(): ?string
     {
         return static::getModel()::count();

@@ -6,20 +6,22 @@ use App\Filament\Resources\UserResource;
 use App\Models\User;
 use App\Models\Tenant;
 use Filament\Actions;
+use Filament\Facades\Filament;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 
 class CreateUser extends CreateRecord
 {
     protected static string $resource = UserResource::class;
-    
+
     // Método para configurar valores por defecto al crear un usuario
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         $user = Auth::user();
-        
+
         // Registrar información de depuración
         Log::info('CreateUser - Datos antes de modificar:', [
             'data' => $data,
@@ -31,38 +33,38 @@ class CreateUser extends CreateRecord
                 'is_tenant_admin' => $user->is_tenant_admin ? 'true' : 'false',
             ]
         ]);
-        
+
         // Si el usuario es un administrador de tenant, forzar tenant_id a su propio tenant
         if ($user && !$user->is_admin && $user->is_tenant_admin) {
             // Aseguramos que tenant_id sea un entero válido
             if (!empty($user->tenant_id)) {
                 $data['tenant_id'] = (int)$user->tenant_id;
             }
-            
+
             // Asegurar que no pueda crear administradores generales
             $data['is_admin'] = false;
         }
-        
+
         // Asegurar que todos los valores boolean sean realmente booleanos
         if (isset($data['is_admin'])) {
             $data['is_admin'] = (bool)$data['is_admin'];
         }
-        
+
         if (isset($data['is_tenant_admin'])) {
             $data['is_tenant_admin'] = (bool)$data['is_tenant_admin'];
         }
-        
+
         // Registrar los datos finales
         Log::info('CreateUser - Datos finales:', ['data' => $data]);
-        
+
         return $data;
     }
-    
+
     // Método para validar que el usuario tenga permisos para crear este registro
     protected function handleRecordCreation(array $data): Model
     {
         $user = Auth::user();
-        
+
         // Verificar que un admin de tenant no pueda crear usuarios fuera de su tenant
         if ($user && !$user->is_admin && $user->is_tenant_admin && isset($data['tenant_id'])) {
             // Convertir ambos valores a string para comparación segura
@@ -74,16 +76,16 @@ class CreateUser extends CreateRecord
                 ));
             }
         }
-        
+
         try {
             // Crear el usuario
             $newUser = parent::handleRecordCreation($data);
-            
+
             // Verificar que el tenant_id sea correcto después de crear
             if ($newUser->tenant_id !== null) {
                 // Obtener el objeto Tenant para verificar que existe
                 $tenant = Tenant::find($newUser->tenant_id);
-                
+
                 // Si el tenant no existe o el ID no coincide, podría haber un problema
                 if (!$tenant) {
                     Log::error('Usuario creado con tenant_id inválido', [
@@ -98,7 +100,38 @@ class CreateUser extends CreateRecord
                     ]);
                 }
             }
-            
+
+            // Guardar tenants adicionales
+            if ($user && isset($data['additionalTenants']) && !empty($data['additionalTenants'])) {
+                // Si es admin global, puede asignar cualquier tenant
+                if ($user->is_admin) {
+                    $newUser->additionalTenants()->sync($data['additionalTenants']);
+                    Log::info('Admin global asignando tenants adicionales', [
+                        'user_id' => $newUser->id,
+                        'additional_tenants' => $data['additionalTenants']
+                    ]);
+                }
+                // Si es admin de tenant, solo puede asignar tenants a los que tiene acceso
+                elseif ($user->is_tenant_admin) {
+                    // Obtener los tenants a los que el admin de tenant tiene acceso
+                    $allowedTenants = $user->getTenants(Filament::getPanel('admin'))->pluck('id')->toArray();
+
+                    // Filtrar los tenants seleccionados para asegurarse de que solo se asignen los permitidos
+                    $filteredTenants = array_intersect($data['additionalTenants'], $allowedTenants);
+
+                    // Sincronizar los tenants filtrados
+                    $newUser->additionalTenants()->sync($filteredTenants);
+
+                    Log::info('Admin de tenant asignando tenants adicionales', [
+                        'user_id' => $user->id,
+                        'new_user_id' => $newUser->id,
+                        'allowed_tenants' => $allowedTenants,
+                        'requested_tenants' => $data['additionalTenants'],
+                        'assigned_tenants' => $filteredTenants
+                    ]);
+                }
+            }
+
             return $newUser;
         } catch (\Exception $e) {
             Log::error('Error al crear usuario', [

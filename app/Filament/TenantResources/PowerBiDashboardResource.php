@@ -114,13 +114,11 @@ class PowerBiDashboardResource extends Resource
                                             ->label('Activo')
                                             ->helperText('Los dashboards inactivos no serán visibles para los usuarios')
                                             ->default(true)
-                                            ->columnSpan(6),
+                                            ->columnSpan(12),
 
-                                        Forms\Components\Toggle::make('is_public')
-                                            ->label('Público dentro del tenant')
-                                            ->helperText('Si está activo, todos los usuarios del tenant podrán verlo')
-                                            ->default(false)
-                                            ->columnSpan(6),
+                                        // Opción oculta pero mantenemos el campo para no afectar la base de datos
+                                        Forms\Components\Hidden::make('is_public')
+                                            ->default(false),
                                     ]),
                             ]),
 
@@ -134,23 +132,13 @@ class PowerBiDashboardResource extends Resource
                                     ->schema([
                                         Forms\Components\TextInput::make('embed_url')
                                             ->label('URL de Incrustación')
-                                            ->helperText('URL completa del informe de Power BI')
-                                            ->required()
+                                            ->helperText('URL completa del informe de Power BI (opcional)')
                                             ->url()
                                             ->columnSpan(12),
 
-                                        Forms\Components\TextInput::make('report_id')
-                                            ->label('ID del Informe')
-                                            ->helperText('ID único del informe en Power BI')
-                                            ->required()
-                                            ->columnSpan(7), // Proporción áurea 7:5
-
-                                        Forms\Components\TextInput::make('embed_token')
-                                            ->label('Token')
-                                            ->password()
-                                            ->revealable()
-                                            ->helperText('Opcional - Token para acceso a Power BI')
-                                            ->columnSpan(5), // Proporción áurea 7:5
+                                        // Campos ocultos para mantener la estructura de la base de datos
+                                        Forms\Components\Hidden::make('report_id'),
+                                        Forms\Components\Hidden::make('embed_token'),
                                     ]),
                             ]),
                     ])
@@ -208,7 +196,7 @@ class PowerBiDashboardResource extends Resource
                         'operaciones' => 'Operaciones',
                         'marketing' => 'Marketing',
                         'rrhh' => 'Recursos Humanos',
-                        'clientes' => 'Clientes',
+                        'clientes' => 'Tenants',
                         'general' => 'General',
                         'otros' => 'Otros',
                         default => $state,
@@ -229,13 +217,6 @@ class PowerBiDashboardResource extends Resource
                     ->boolean()
                     ->alignCenter()
                     ->sortable(),
-
-                Tables\Columns\IconColumn::make('is_public')
-                    ->label('Público')
-                    ->boolean()
-                    ->trueIcon('heroicon-o-globe-alt')
-                    ->falseIcon('heroicon-o-lock-closed')
-                    ->alignCenter(),
             ])
             ->paginated([10, 25, 50, 100])
             ->defaultSort('created_at', 'desc')
@@ -248,7 +229,7 @@ class PowerBiDashboardResource extends Resource
                         'operaciones' => 'Operaciones',
                         'marketing' => 'Marketing',
                         'rrhh' => 'Recursos Humanos',
-                        'clientes' => 'Clientes',
+                        'clientes' => 'Tenants',
                         'general' => 'General',
                         'otros' => 'Otros',
                     ])
@@ -259,12 +240,6 @@ class PowerBiDashboardResource extends Resource
                     ->placeholder('Todos los dashboards')
                     ->trueLabel('Dashboards activos')
                     ->falseLabel('Dashboards inactivos'),
-
-                Tables\Filters\TernaryFilter::make('is_public')
-                    ->label('Visibilidad')
-                    ->placeholder('Todos los dashboards')
-                    ->trueLabel('Dashboards públicos')
-                    ->falseLabel('Dashboards privados'),
             ])
             ->actions([
                 // Acción modal personalizada sólo con el iframe del dashboard
@@ -311,7 +286,7 @@ class PowerBiDashboardResource extends Resource
             ])
             ->emptyStateIcon('heroicon-o-chart-bar')
             ->emptyStateHeading('No hay dashboards asignados')
-            ->emptyStateDescription('Este cliente no tiene dashboards de Power BI asignados.');
+            ->emptyStateDescription('Este tenant no tiene dashboards de Power BI asignados.');
     }
 
     // No necesitamos relaciones en el contexto del tenant

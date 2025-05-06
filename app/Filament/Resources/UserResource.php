@@ -20,16 +20,16 @@ class UserResource extends Resource
     protected static ?string $model = User::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-users';
-    
+
     protected static ?string $navigationGroup = 'Administración';
-    
+
     protected static ?int $navigationSort = 1;
-    
+
     // Aseguramos que el recurso sea visible para administradores en el panel correcto
     public static function shouldRegisterNavigation(): bool
     {
         $user = Auth::user();
-        
+
         // Solo debe ser visible para administradores
         return $user && ($user->is_admin || $user->is_tenant_admin);
     }
@@ -38,7 +38,7 @@ class UserResource extends Resource
     {
         // Obtenemos el usuario autenticado
         $user = Auth::user();
-        
+
         return $form
             ->columns(12) // Usamos 12 columnas para aplicar mejor la proporción áurea (aproximadamente 7:5:3)
             ->schema([
@@ -55,7 +55,7 @@ class UserResource extends Resource
                             ->columnSpan(7) // Proporción áurea aproximada
                             ->maxLength(255)
                             ->prefixIcon('heroicon-o-user'),
-                            
+
                         Forms\Components\TextInput::make('email')
                             ->label('Correo electrónico')
                             ->email()
@@ -67,9 +67,9 @@ class UserResource extends Resource
                             ->unique(ignoreRecord: true),
                     ])
                     ->columnSpan(7), // Espacio principal (Proporción áurea)
-                
 
-                
+
+
                 // Sección de seguridad (Principio de similitud - elementos que comparten un propósito)
                 Forms\Components\Section::make('Seguridad')
                     ->description('Credenciales de acceso')
@@ -82,16 +82,16 @@ class UserResource extends Resource
                             ->required(fn (string $operation): bool => $operation === 'create')
                             ->dehydrated(fn ($state) => filled($state))
                             ->maxLength(255)
-                            ->label(fn (string $operation): string => 
+                            ->label(fn (string $operation): string =>
                                 $operation === 'create' ? 'Contraseña' : 'Contraseña (dejar en blanco para mantener la actual)')
                             ->autocomplete(false)
                             ->revealable()
                             ->helperText('Mínimo 8 caracteres recomendados'),
                     ])
                     ->columnSpan(5), // Espacio complementario (Proporción áurea)
-                
+
                 // Sección de asignación de roles y tenant - visible según el rol actual del usuario
-                Forms\Components\Section::make('Asignación de tenant y roles')
+                Forms\Components\Section::make('Asignación de tenants y roles')
                     ->description('Permisos y acceso al sistema')
                     ->icon('heroicon-o-key')
                     ->collapsible()
@@ -100,7 +100,7 @@ class UserResource extends Resource
                     ->schema([
                         // Selector de tenant - condicionado según el rol del usuario
                         Forms\Components\Select::make('tenant_id')
-                            ->label('Organización')
+                            ->label('Tenant Principal')
                             ->relationship('tenant', 'name')
                             ->searchable()
                             ->preload()
@@ -125,7 +125,7 @@ class UserResource extends Resource
                                 $user = Auth::user();
                                 return $user->is_tenant_admin ? $user->tenant_id : null;
                             }),
-                            
+
                         // Rol de administrador general - solo visible para administradores generales
                         Forms\Components\Toggle::make('is_admin')
                             ->label('Administrador General')
@@ -145,7 +145,7 @@ class UserResource extends Resource
                                     $set('is_tenant_admin', false);
                                 }
                             }),
-                            
+
                         // Rol de administrador de tenant - visible para admins generales siempre, y para admins de tenant solo si no es admin general
                         Forms\Components\Toggle::make('is_tenant_admin')
                             ->label('Administrador de Organización')
@@ -158,12 +158,12 @@ class UserResource extends Resource
                             })
                             // Deshabilitar si:
                             // 1. El usuario a editar es admin general
-                            // 2. En el formulario actual está marcado como admin general 
+                            // 2. En el formulario actual está marcado como admin general
                             // 3. Un admin de tenant intenta quitarse su propio rol
                             ->disabled(function ($record, $get) {
                                 $user = Auth::user();
                                 // Caso 1 y 3
-                                $disabledByRecord = ($record && $record->is_admin) || 
+                                $disabledByRecord = ($record && $record->is_admin) ||
                                                   (!$user->is_admin && $record && $record->id === $user->id);
                                 // Caso 2 - Si is_admin está marcado en el formulario
                                 $disabledByForm = false;
@@ -175,12 +175,24 @@ class UserResource extends Resource
                                         // Si hay error al obtener is_admin, no deshabilitar por este motivo
                                     }
                                 }
-                                
+
                                 return $disabledByRecord || $disabledByForm;
                             })
                             // Siempre guardamos el valor de is_tenant_admin
                             // Los permisos ya están controlados por visible() y disabled()
                             ->dehydrated(true),
+
+                        // Selector de tenants adicionales - solo visible para administradores globales
+                        Forms\Components\Select::make('additionalTenants')
+                            ->label('Tenants adicionales')
+                            ->helperText('Tenants adicionales a los que el usuario puede acceder')
+                            ->relationship('additionalTenants', 'name')
+                            ->multiple()
+                            ->preload()
+                            ->searchable()
+                            ->columnSpan(12)
+                            // Visible para admins globales y admins de tenant
+                            ->visible(fn () => Auth::user()->is_admin || Auth::user()->is_tenant_admin),
                     ])
                     ->columnSpan(12), // Ocupa todo el ancho para destacar su importancia
             ]);
@@ -196,20 +208,20 @@ class UserResource extends Resource
                     ->searchable()
                     ->sortable()
                     ->weight('bold'),
-                    
+
                 Tables\Columns\TextColumn::make('email')
                     ->label('Correo')
                     ->searchable()
                     ->copyable()
                     ->copyMessage('Correo copiado')
                     ->color('gray'),
-                    
+
                 Tables\Columns\TextColumn::make('tenant.name')
-                    ->label('Organización')
+                    ->label('Tenant Principal')
                     ->sortable()
                     ->searchable()
                     ->toggleable(),
-                    
+
                 // Columna personalizada para mostrar el rol del usuario
                 Tables\Columns\TextColumn::make('role')
                     ->label('Rol')
@@ -227,7 +239,7 @@ class UserResource extends Resource
                     })
                     ->searchable()
                     ->sortable(),
-                    
+
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Fecha de creación')
                     ->dateTime('d/m/Y H:i')
@@ -237,14 +249,14 @@ class UserResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('tenant')
                     ->relationship('tenant', 'name')
-                    ->label('Organización')
+                    ->label('Tenant Principal')
                     ->preload()
                     ->searchable()
                     // Solo admins generales pueden filtrar por tenant
                     ->visible(function () {
                         return Auth::user()->is_admin;
                     }),
-                    
+
                 Tables\Filters\SelectFilter::make('role')
                     ->label('Rol')
                     ->options([
@@ -289,7 +301,7 @@ class UserResource extends Resource
             ->emptyStateIcon('heroicon-o-users')
             ->emptyStateHeading('No hay usuarios')
             ->emptyStateDescription('Crea tu primer usuario haciendo clic en el botón "Crear usuario".');
-    
+
     }
 
     public static function getRelations(): array
@@ -303,7 +315,7 @@ class UserResource extends Resource
     {
         return 'Usuario';
     }
-    
+
     public static function getPluralModelLabel(): string
     {
         return 'Usuarios';
@@ -317,25 +329,25 @@ class UserResource extends Resource
             'edit' => Pages\EditUser::route('/{record}/edit'),
         ];
     }
-    
+
     // Método para determinar si el usuario actual puede acceder al recurso
     public static function canAccess(): bool
     {
         $user = Auth::user();
         return $user && ($user->is_admin || $user->is_tenant_admin);
     }
-    
+
     // Método que modifica la consulta para que los tenant_admin solo vean usuarios de su tenant
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery();
-        
+
         // Si es un tenant_admin, solo puede ver usuarios de su propio tenant
         $user = Auth::user();
         if ($user && $user->is_tenant_admin && !$user->is_admin) {
             $query->where('tenant_id', $user->tenant_id);
         }
-        
+
         return $query;
     }
 }

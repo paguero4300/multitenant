@@ -11,6 +11,7 @@ use Filament\Models\Contracts\HasTenants;
 use Filament\Panel;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Collection;
 
 class User extends Authenticatable implements FilamentUser, HasTenants
@@ -24,8 +25,8 @@ class User extends Authenticatable implements FilamentUser, HasTenants
      * @var list<string>
      */
     protected $fillable = [
-        'name', 
-        'email', 
+        'name',
+        'email',
         'password',
         'tenant_id',
         'is_admin', // Agregar campo para distinguir admins
@@ -61,6 +62,16 @@ class User extends Authenticatable implements FilamentUser, HasTenants
         return $this->belongsTo(Tenant::class);
     }
 
+    /**
+     * Tenants adicionales a los que el usuario tiene acceso
+     *
+     * @return BelongsToMany
+     */
+    public function additionalTenants(): BelongsToMany
+    {
+        return $this->belongsToMany(Tenant::class, 'tenant_user_access');
+    }
+
     // Método requerido por HasTenants
     public function getTenants(Panel $panel): Collection
     {
@@ -68,9 +79,12 @@ class User extends Authenticatable implements FilamentUser, HasTenants
         if ($this->is_admin) {
             return Tenant::all();
         }
-        
-        // Usuario normal solo ve su propio tenant
-        return Tenant::where('id', $this->tenant_id)->get();
+
+        // Tanto admins de tenant como usuarios regulares ven su tenant principal y los adicionales
+        $tenantIds = [$this->tenant_id];
+        $additionalIds = $this->additionalTenants()->pluck('tenants.id')->toArray();
+
+        return Tenant::whereIn('id', array_merge($tenantIds, $additionalIds))->get();
     }
 
     // Método para verificar seguridad de acceso a tenant
@@ -80,18 +94,29 @@ class User extends Authenticatable implements FilamentUser, HasTenants
         if ($this->is_admin == 1) {
             return true;
         }
-        
-        // Administradores de tenant pueden acceder solo a su tenant
+
+        // Administradores de tenant pueden acceder a su tenant principal
         if ($this->is_tenant_admin == 1) {
-            return (string)$tenant->id === (string)$this->tenant_id;
+            // Verificar tenant principal
+            if ((string)$tenant->id === (string)$this->tenant_id) {
+                return true;
+            }
+
+            // Verificar tenants adicionales
+            return $this->additionalTenants()->where('tenants.id', $tenant->id)->exists();
         }
-        
-        // Usuario normal puede acceder solo al tenant al que pertenece
-        if ($this->tenant_id !== null) {
-            return (string)$tenant->id === (string)$this->tenant_id;
+
+        // Usuario normal puede acceder a su tenant principal
+        if ($this->tenant_id !== null && (string)$tenant->id === (string)$this->tenant_id) {
+            return true;
         }
-        
-        // Si el usuario no tiene tenant asignado, no puede acceder a ninguno
+
+        // O a cualquier tenant adicional en la tabla pivote
+        if ($this->additionalTenants()->where('tenants.id', $tenant->id)->exists()) {
+            return true;
+        }
+
+        // Si no cumple ninguna condición, no puede acceder
         return false;
     }
 
@@ -100,7 +125,7 @@ class User extends Authenticatable implements FilamentUser, HasTenants
     {
         return true; // O personalizar según necesidad
     }
-    
+
     /**
      * Verifica si el usuario es un administrador
      *
@@ -110,7 +135,7 @@ class User extends Authenticatable implements FilamentUser, HasTenants
     {
         return (bool) $this->is_admin;
     }
-    
+
     /**
      * Verifica si el usuario es un administrador de tenant
      *
@@ -120,7 +145,7 @@ class User extends Authenticatable implements FilamentUser, HasTenants
     {
         return (bool) $this->is_tenant_admin;
     }
-    
+
     /**
      * Verifica si el usuario tiene acceso a un tenant específico
      *
