@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 
 class User extends Authenticatable implements FilamentUser, HasTenants
 {
@@ -53,7 +54,38 @@ class User extends Authenticatable implements FilamentUser, HasTenants
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_admin' => 'boolean',
+            'is_tenant_admin' => 'boolean',
         ];
+    }
+
+    /**
+     * Boot del modelo para validaciones automáticas
+     */
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::saving(function ($user) {
+            // Validar que un usuario no puede ser admin global Y admin de tenant
+            if ($user->is_admin && $user->is_tenant_admin) {
+                throw new \InvalidArgumentException('Un usuario no puede ser administrador global y administrador de tenant al mismo tiempo');
+            }
+
+            // Validar que admin de tenant debe tener tenant_id
+            if ($user->is_tenant_admin && !$user->tenant_id) {
+                throw new \InvalidArgumentException('Un administrador de tenant debe tener un tenant_id asignado');
+            }
+
+            // Admin global no debe tener tenant_id (opcional, pero recomendado)
+            if ($user->is_admin && $user->tenant_id) {
+                Log::warning('Administrador global con tenant_id asignado', [
+                    'user_id' => $user->id,
+                    'email' => $user->email,
+                    'tenant_id' => $user->tenant_id
+                ]);
+            }
+        });
     }
 
 
@@ -123,7 +155,21 @@ class User extends Authenticatable implements FilamentUser, HasTenants
     // Para filtrar acceso al panel Filament
     public function canAccessPanel(Panel $panel): bool
     {
-        return true; // O personalizar según necesidad
+        // Verificar acceso según el tipo de panel
+        $panelId = $panel->getId();
+
+        // Panel de administración: solo admins globales
+        if ($panelId === 'admin') {
+            return $this->is_admin;
+        }
+
+        // Panel de tenant: admins globales, admins de tenant, y usuarios regulares con tenant
+        if ($panelId === 'tenant') {
+            return $this->is_admin || $this->is_tenant_admin || $this->tenant_id !== null;
+        }
+
+        // Por defecto, denegar acceso a paneles no reconocidos
+        return false;
     }
 
     /**

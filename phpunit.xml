@@ -11,6 +11,12 @@
         <testsuite name="Feature">
             <directory>tests/Feature</directory>
         </testsuite>
+        <testsuite name="Permissions">
+            <file>tests/Feature/UserPermissionsTest.php</file>
+            <file>tests/Feature/DashboardAccessTest.php</file>
+            <file>tests/Feature/MiddlewareTest.php</file>
+            <file>tests/Feature/SecurityTest.php</file>
+        </testsuite>
     </testsuites>
     <source>
         <include>

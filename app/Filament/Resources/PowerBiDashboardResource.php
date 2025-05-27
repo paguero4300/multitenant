@@ -445,6 +445,15 @@ class PowerBiDashboardResource extends Resource
                                 'direct_url' => true
                             ]);
 
+                            // Verificar si hay URL de embed
+                            if (!$embedUrl) {
+                                return new \Illuminate\Support\HtmlString(
+                                    '<div class="p-8 text-center text-gray-500">
+                                        <p class="text-lg">No hay URL de incrustación configurada para este dashboard.</p>
+                                        <p class="text-sm mt-2">Edita el dashboard para configurar la integración con Power BI.</p>
+                                    </div>'
+                                );
+                            }
 
                             return new \Illuminate\Support\HtmlString(<<<HTML
                             <div class="w-full overflow-hidden bg-white rounded-lg shadow-lg">

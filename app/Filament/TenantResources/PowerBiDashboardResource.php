@@ -184,7 +184,9 @@ class PowerBiDashboardResource extends Resource
                     ->searchable()
                     ->sortable()
                     ->weight('bold')
-                    ->description(fn (PowerBiDashboard $record): string => Str::limit($record->description, 100))
+                    ->description(fn (PowerBiDashboard $record): string =>
+                        $record->description ? Str::limit($record->description, 100) : 'Sin descripción'
+                    )
                     ->wrap(),
 
                 Tables\Columns\TextColumn::make('category')
@@ -263,6 +265,16 @@ class PowerBiDashboardResource extends Resource
                             'tenant_id' => $tenant ? $tenant->id : null,
                             'direct_url' => true
                         ]);
+
+                        // Verificar si hay URL de embed
+                        if (!$embedUrl) {
+                            return new \Illuminate\Support\HtmlString(
+                                '<div class="p-8 text-center text-gray-500">
+                                    <p class="text-lg">No hay URL de incrustación configurada para este dashboard.</p>
+                                    <p class="text-sm mt-2">Contacta al administrador para configurar la integración con Power BI.</p>
+                                </div>'
+                            );
+                        }
 
                         // Devolvemos el iframe con una barra de navegación clara
                         // Usamos HtmlString para que sea compatible con Htmlable
